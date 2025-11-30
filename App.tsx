@@ -14,7 +14,14 @@ import {
   HardHat, 
   Zap,
   CheckCircle2,
-  PieChart
+  PieChart as PieChartIcon,
+  AlertTriangle,
+  Plus,
+  Save,
+  RefreshCw,
+  Search,
+  Filter,
+  ArrowUpDown
 } from 'lucide-react';
 import { 
   BarChart, 
@@ -24,7 +31,12 @@ import {
   CartesianGrid, 
   Tooltip, 
   ResponsiveContainer,
-  Cell
+  Cell,
+  LineChart,
+  Line,
+  Legend,
+  PieChart,
+  Pie
 } from 'recharts';
 
 import { 
@@ -42,9 +54,13 @@ import { generateReport } from './services/geminiService';
 
 // --- Utility Functions ---
 
-const calculateFinancials = (state: AppState): { summary: FinancialSummary, partnerStats: PartnerFinancials[] } => {
-  const totalRevenue = state.payments.reduce((sum, p) => sum + p.totalAmount, 0);
-  const totalExpenses = state.expenses.reduce((sum, e) => sum + e.amount, 0);
+const calculateFinancials = (state: AppState): { 
+  summary: FinancialSummary, 
+  partnerStats: PartnerFinancials[],
+  monthlyData: any[] 
+} => {
+  const totalRevenue = state.payments.reduce<number>((sum, p) => sum + p.totalAmount, 0);
+  const totalExpenses = state.expenses.reduce<number>((sum, e) => sum + e.amount, 0);
   
   const taxableProfit = Math.max(0, totalRevenue - totalExpenses);
   const corporateTax = taxableProfit * TAX_RATE;
@@ -111,6 +127,23 @@ const calculateFinancials = (state: AppState): { summary: FinancialSummary, part
     };
   });
 
+  // Monthly Aggregation for Charts
+  const monthlyMap: Record<string, {name: string, income: number, expense: number}> = {};
+  
+  state.payments.forEach(p => {
+    const month = p.date.substring(0, 7); // YYYY-MM
+    if (!monthlyMap[month]) monthlyMap[month] = { name: month, income: 0, expense: 0 };
+    monthlyMap[month].income += p.totalAmount;
+  });
+
+  state.expenses.forEach(e => {
+    const month = e.date.substring(0, 7);
+    if (!monthlyMap[month]) monthlyMap[month] = { name: month, income: 0, expense: 0 };
+    monthlyMap[month].expense += e.amount;
+  });
+
+  const monthlyData = Object.values(monthlyMap).sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     summary: {
       totalRevenue,
@@ -119,7 +152,8 @@ const calculateFinancials = (state: AppState): { summary: FinancialSummary, part
       corporateTax,
       netProfit 
     },
-    partnerStats
+    partnerStats,
+    monthlyData
   };
 };
 
@@ -243,87 +277,145 @@ export default function App() {
 
   // --- Sub-Components ---
 
-  const DashboardView = () => (
-    <div className="space-y-6">
-      <SectionTitle icon={LayoutDashboard} color="text-indigo-600">Финансово Табло</SectionTitle>
-      
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <FinancialCard 
-          title="Общи Приходи" 
-          amount={financials.summary.totalRevenue} 
-          icon={TrendingUp} 
-          colorClass="text-emerald-600 bg-emerald-600" 
-        />
-        <FinancialCard 
-          title="Общи Разходи" 
-          amount={financials.summary.totalExpenses} 
-          icon={Receipt} 
-          colorClass="text-red-500 bg-red-500" 
-        />
-        <FinancialCard 
-          title="Корпоративен Данък (10%)" 
-          amount={financials.summary.corporateTax} 
-          icon={FileText} 
-          colorClass="text-amber-500 bg-amber-500" 
-        />
-        <FinancialCard 
-          title="Нетна Печалба" 
-          amount={financials.summary.netProfit} 
-          icon={Wallet} 
-          colorClass="text-blue-600 bg-blue-600" 
-        />
-      </div>
+  const DashboardView = () => {
+    const COLORS = ['#3B82F6', '#10B981', '#EAB308'];
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    return (
+      <div className="space-y-6 animate-in fade-in duration-500">
+        <SectionTitle icon={LayoutDashboard} color="text-indigo-600">Финансово Табло</SectionTitle>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <FinancialCard 
+            title="Общи Приходи" 
+            amount={financials.summary.totalRevenue} 
+            icon={TrendingUp} 
+            colorClass="text-emerald-600 bg-emerald-600" 
+          />
+          <FinancialCard 
+            title="Общи Разходи" 
+            amount={financials.summary.totalExpenses} 
+            icon={Receipt} 
+            colorClass="text-red-500 bg-red-500" 
+          />
+          <FinancialCard 
+            title="Корпоративен Данък (10%)" 
+            amount={financials.summary.corporateTax} 
+            icon={FileText} 
+            colorClass="text-amber-500 bg-amber-500" 
+          />
+          <FinancialCard 
+            title="Нетна Печалба" 
+            amount={financials.summary.netProfit} 
+            icon={Wallet} 
+            colorClass="text-blue-600 bg-blue-600" 
+          />
+        </div>
+
+        {/* Monthly Trend Chart */}
         <div className="bg-white p-6 rounded-xl shadow border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-600 mb-4">Приходи по Екип</h3>
-          <div className="h-64">
+          <h3 className="text-lg font-bold text-slate-600 mb-4 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-indigo-500" /> Месечен Тренд: Приходи vs Разходи
+          </h3>
+          <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={financials.partnerStats}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="name" tick={{fontSize: 12}} interval={0} tickFormatter={(val) => val.split(' ')[0]} />
-                <YAxis />
+              <LineChart data={financials.monthlyData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                <XAxis dataKey="name" tick={{fontSize: 12, fill: '#64748b'}} />
+                <YAxis tick={{fontSize: 12, fill: '#64748b'}} />
                 <Tooltip 
-                  formatter={(value: number) => value.toLocaleString('bg-BG', { style: 'currency', currency: 'BGN' })}
-                  contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                   formatter={(value: number) => value.toLocaleString('bg-BG', { style: 'currency', currency: 'BGN' })}
+                   contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
                 />
-                <Bar dataKey="revenue" name="Приходи" radius={[6, 6, 0, 0]}>
-                  {financials.partnerStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={index === 2 ? '#EAB308' : '#3B82F6'} />
-                  ))}
-                </Bar>
-              </BarChart>
+                <Legend />
+                <Line type="monotone" dataKey="income" name="Приходи" stroke="#10B981" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} />
+                <Line type="monotone" dataKey="expense" name="Разходи" stroke="#EF4444" strokeWidth={3} dot={{r: 4}} activeDot={{r: 6}} />
+              </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow border border-slate-100">
-          <h3 className="text-lg font-bold text-slate-600 mb-4">Текущ Баланс (За взимане)</h3>
-          <div className="h-64">
-             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={financials.partnerStats} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" horizontal={true} />
-                <XAxis type="number" />
-                <YAxis dataKey="name" type="category" width={100} tick={{fontSize: 12}} tickFormatter={(val) => val.split(' ')[0]} />
-                <Tooltip formatter={(value: number) => value.toLocaleString('bg-BG', { style: 'currency', currency: 'BGN' })} />
-                <Bar dataKey="balance" name="Баланс" fill="#10B981" radius={[0, 6, 6, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Revenue by Partner - Bar Chart */}
+          <div className="bg-white p-6 rounded-xl shadow border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-600 mb-4">Приходи по Екип</h3>
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={financials.partnerStats}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" tick={{fontSize: 12}} interval={0} tickFormatter={(val) => val.split(' ')[0]} />
+                  <YAxis />
+                  <Tooltip 
+                    formatter={(value: number) => value.toLocaleString('bg-BG', { style: 'currency', currency: 'BGN' })}
+                    contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                    cursor={{fill: '#f1f5f9'}}
+                  />
+                  <Bar dataKey="revenue" name="Приходи" radius={[6, 6, 0, 0]}>
+                    {financials.partnerStats.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+
+          {/* Profit Distribution - Pie Chart */}
+          <div className="bg-white p-6 rounded-xl shadow border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-600 mb-4">Дял от Печалбата</h3>
+            <div className="h-64">
+               <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={financials.partnerStats}
+                    dataKey="netProfitShare"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                  >
+                    {financials.partnerStats.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                     formatter={(value: number) => value.toLocaleString('bg-BG', { style: 'currency', currency: 'BGN' })}
+                  />
+                  <Legend iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  );
+    );
+  };
 
   const ProjectsView = () => {
     const [name, setName] = useState('');
     const [desc, setDesc] = useState('');
     const [type, setType] = useState<'construction' | 'electrical'>('construction');
+    const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
+    
+    // Search and Sort State
+    const [searchTerm, setSearchTerm] = useState('');
+    const [sortOrder, setSortOrder] = useState<'newest' | 'oldest' | 'name'>('newest');
+
+    const filteredProjects = state.projects
+      .filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+      .sort((a, b) => {
+        if (sortOrder === 'newest') return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+        if (sortOrder === 'oldest') return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        if (sortOrder === 'name') return a.name.localeCompare(b.name);
+        return 0;
+      });
     
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 animate-in fade-in duration-300">
         <SectionTitle icon={Briefcase} color="text-blue-600">Управление на Проекти</SectionTitle>
 
+        {/* Add Project Form */}
         <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-blue-500">
           <h3 className="text-lg font-bold mb-4 text-slate-700">Нов Проект</h3>
           <div className="flex flex-col md:flex-row gap-4 items-end">
@@ -365,7 +457,35 @@ export default function App() {
           </div>
         </div>
 
+        {/* Filters and List */}
         <div className="bg-white rounded-xl shadow overflow-hidden border border-slate-200">
+          
+          {/* Toolbar */}
+          <div className="p-4 border-b border-slate-100 bg-slate-50 flex flex-col md:flex-row gap-4 justify-between items-center">
+             <div className="relative w-full md:w-96">
+                <Search className="absolute left-3 top-3.5 text-slate-400 w-5 h-5" />
+                <input 
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Търсене на проект..."
+                  className="w-full pl-10 pr-4 py-3 rounded-lg border border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+                />
+             </div>
+             <div className="flex items-center gap-2 w-full md:w-auto">
+               <ArrowUpDown className="text-slate-400 w-5 h-5" />
+               <select 
+                  value={sortOrder}
+                  onChange={(e) => setSortOrder(e.target.value as any)}
+                  className="w-full md:w-48 p-3 rounded-lg border border-slate-200 bg-white focus:border-blue-400 outline-none"
+               >
+                 <option value="newest">Най-нови</option>
+                 <option value="oldest">Най-стари</option>
+                 <option value="name">По име (А-Я)</option>
+               </select>
+             </div>
+          </div>
+
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
@@ -376,7 +496,7 @@ export default function App() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-200">
-              {state.projects.map(p => (
+              {filteredProjects.map(p => (
                 <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                   <td className="px-6 py-4">
                     <div className="font-bold text-slate-700 text-lg">{p.name}</div>
@@ -399,20 +519,58 @@ export default function App() {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <button className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full transition-colors" title="Изтрий" onClick={() => {
-                       if(window.confirm('Сигурни ли сте, че искате да изтриете този проект?')) setState(prev => ({...prev, projects: prev.projects.filter(pr => pr.id !== p.id)}));
-                    }}>
+                    <button 
+                      className="text-red-400 hover:text-red-600 hover:bg-red-50 p-2 rounded-full transition-colors" 
+                      title="Изтрий" 
+                      onClick={() => setProjectToDelete(p.id)}
+                    >
                       <Trash2 className="w-5 h-5" />
                     </button>
                   </td>
                 </tr>
               ))}
-              {state.projects.length === 0 && (
-                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 text-base">Няма добавени проекти</td></tr>
+              {filteredProjects.length === 0 && (
+                <tr><td colSpan={4} className="px-6 py-8 text-center text-slate-400 text-base">Няма намерени проекти</td></tr>
               )}
             </tbody>
           </table>
         </div>
+
+        {/* Custom Confirmation Modal */}
+        {projectToDelete && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-50 p-4 transition-all animate-in fade-in duration-200">
+            <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-8 border-t-4 border-red-500 animate-in fade-in zoom-in-95 duration-200">
+              <div className="flex items-center gap-4 mb-4">
+                <div className="bg-red-100 p-3 rounded-full text-red-600">
+                   <AlertTriangle className="w-8 h-8" />
+                </div>
+                <h3 className="text-2xl font-bold text-slate-800">Изтриване на проект?</h3>
+              </div>
+              <p className="text-slate-600 text-lg mb-8 leading-relaxed">
+                Сигурни ли сте, че искате да изтриете проект <span className="font-bold text-slate-800">"{state.projects.find(p => p.id === projectToDelete)?.name}"</span>? 
+                <br /><br />
+                <span className="text-sm text-red-500 font-medium">Това действие е необратимо и ще изтрие всички данни свързани с него.</span>
+              </p>
+              <div className="flex justify-end gap-4">
+                <button 
+                  onClick={() => setProjectToDelete(null)}
+                  className="px-6 py-3 rounded-xl text-slate-600 font-bold bg-slate-100 hover:bg-slate-200 transition-colors text-lg"
+                >
+                  Отказ
+                </button>
+                <button 
+                  onClick={() => {
+                     setState(prev => ({...prev, projects: prev.projects.filter(pr => pr.id !== projectToDelete)}));
+                     setProjectToDelete(null);
+                  }}
+                  className="px-6 py-3 rounded-xl bg-red-600 text-white font-bold hover:bg-red-700 shadow-lg shadow-red-200 transition-all transform hover:-translate-y-1 text-lg"
+                >
+                  Да, Изтрий
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   };
@@ -424,7 +582,6 @@ export default function App() {
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
     const [splits, setSplits] = useState<{[key: string]: string}>({});
 
-    // Ensure we select the first project by default if none selected but available
     useEffect(() => {
       if (!projectId && state.projects.length > 0) {
         setProjectId(state.projects[0].id);
@@ -434,7 +591,6 @@ export default function App() {
     const currentDistributed = Object.values(splits).reduce<number>((a, b) => a + (parseFloat(b) || 0), 0);
     const total = parseFloat(amount) || 0;
     const remaining = total - currentDistributed;
-    // Allow small epsilon error for float math
     const isBalanced = Math.abs(remaining) < 0.1;
 
     const handleSave = () => {
@@ -451,21 +607,27 @@ export default function App() {
       setAmount('');
       setDesc('');
       setSplits({});
+      alert("Приходът е записан успешно!");
     };
 
     const autoFill = (pid: string) => {
-       const currentVal = parseFloat(splits[pid] || '0');
+       const currentVal = parseFloat((splits[pid] as string) || '0');
        const newVal = (currentVal + remaining).toFixed(2);
-       setSplits(prev => ({
-         ...prev,
-         [pid]: newVal
-       }));
+       setSplits(prev => ({ ...prev, [pid]: newVal }));
+    };
+
+    const splitEqually = () => {
+      if (total <= 0) return;
+      const share = (total / PARTNERS.length).toFixed(2);
+      const newSplits: any = {};
+      PARTNERS.forEach(p => newSplits[p.id] = share);
+      setSplits(newSplits);
     };
 
     const activeProject = state.projects.find(p => p.id === projectId);
 
     return (
-      <div className="space-y-6">
+      <div className="space-y-6 animate-in fade-in duration-300">
         <SectionTitle icon={Wallet} color="text-emerald-600">Въвеждане на Приход</SectionTitle>
 
         <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-emerald-500">
@@ -497,7 +659,7 @@ export default function App() {
                  <input 
                   type="number" 
                   value={amount} 
-                  onChange={e => setAmount(e.target.value)} 
+                  onChange={(e: React.ChangeEvent<HTMLInputElement>) => setAmount(e.target.value)} 
                   className="w-full rounded-lg border-emerald-200 border bg-white p-3 pl-12 text-lg font-bold text-slate-700 focus:ring-2 focus:ring-emerald-100 focus:border-emerald-400 outline-none transition-all placeholder:text-slate-300"
                   placeholder="0.00" 
                  />
@@ -525,84 +687,49 @@ export default function App() {
            </div>
 
            <div className="bg-emerald-50 p-6 rounded-xl border border-emerald-100">
-             <div className="flex justify-between items-center mb-4">
+             <div className="flex justify-between items-center mb-4 flex-wrap gap-2">
                <span className="text-base font-bold text-emerald-900 flex items-center gap-2">
-                 <PieChart className="w-5 h-5" /> Разпределение на сумата
+                 <PieChartIcon className="w-5 h-5" /> Разпределение на сумата
                </span>
-               <span className={`text-sm font-bold px-3 py-1 rounded ${isBalanced ? 'bg-green-200 text-green-800' : 'bg-red-200 text-red-800'}`}>
-                 За разпределяне: {remaining.toFixed(2)} лв.
-               </span>
+               <div className="text-sm font-medium text-emerald-800">
+                 Остатък за разпределяне: <span className={remaining !== 0 ? 'text-red-600 font-bold' : 'text-emerald-600 font-bold'}>{remaining.toFixed(2)} лв.</span>
+               </div>
+               <button onClick={splitEqually} className="text-xs bg-emerald-200 hover:bg-emerald-300 text-emerald-800 px-2 py-1 rounded transition-colors">
+                 По равно (1/3)
+               </button>
              </div>
              
-             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-               {PARTNERS.map(partner => (
-                 <div key={partner.id} className="bg-white p-3 rounded-lg shadow-sm border border-emerald-100">
-                   <label 
-                     onClick={() => autoFill(partner.id)} 
-                     className="block text-sm font-bold text-slate-600 mb-2 cursor-pointer hover:text-emerald-600 flex justify-between"
-                     title="Кликни за автоматично попълване на остатъка"
-                   >
-                     {partner.name.split(' ')[0]}
-                     <span className="text-xs font-normal text-slate-400 bg-slate-50 px-2 rounded-full">Кликни</span>
-                   </label>
+             <div className="space-y-3">
+               {PARTNERS.map(p => (
+                 <div key={p.id} className="flex items-center gap-4">
+                   <div className="w-32 font-medium text-slate-700">{p.name.split(' ')[0]}:</div>
                    <input 
-                    type="number" 
-                    value={splits[partner.id] || ''} 
-                    onChange={e => setSplits(prev => ({...prev, [partner.id]: e.target.value}))}
-                    className="w-full rounded border-slate-200 border p-2 text-lg font-bold text-center text-slate-700 focus:ring-2 focus:ring-emerald-500 outline-none bg-white placeholder:text-slate-200" 
-                    placeholder="0"
+                      type="number"
+                      value={splits[p.id] || ''}
+                      onChange={e => setSplits(prev => ({...prev, [p.id]: e.target.value}))}
+                      className="flex-1 rounded border-emerald-200 p-2 text-right focus:ring-1 focus:ring-emerald-500 outline-none"
+                      placeholder="0.00"
                    />
+                   <button 
+                     onClick={() => autoFill(p.id)}
+                     className="p-2 text-emerald-600 hover:bg-emerald-100 rounded-full"
+                     title="Добави остатъка тук"
+                   >
+                     <Plus className="w-4 h-4" />
+                   </button>
                  </div>
                ))}
              </div>
-             
+           </div>
+
+           <div className="mt-6">
              <button 
-              onClick={handleSave}
-              disabled={!projectId || total <= 0}
-              className={`mt-6 w-full py-3 rounded-lg text-base font-bold shadow-md transition-all
-                ${!projectId || total <= 0 
-                  ? 'bg-slate-300 text-slate-500 cursor-not-allowed' 
-                  : 'bg-emerald-600 text-white hover:bg-emerald-700 transform hover:-translate-y-0.5'}`}
+               onClick={handleSave}
+               className="w-full bg-emerald-600 text-white py-4 rounded-xl text-lg font-bold shadow-lg hover:bg-emerald-700 transition-transform active:scale-95 flex items-center justify-center gap-2"
              >
-               ЗАПИШИ ПРИХОД
+               <Save className="w-6 h-6" /> Запиши Приход
              </button>
            </div>
-        </div>
-
-        {/* Payments List */}
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
-           <div className="px-6 py-4 border-b border-slate-100 bg-slate-50">
-             <h3 className="text-sm font-bold text-slate-500 uppercase tracking-wider">Последни плащания</h3>
-           </div>
-           <ul className="divide-y divide-slate-100">
-             {state.payments.slice().reverse().map(payment => {
-               const proj = state.projects.find(p => p.id === payment.projectId);
-               return (
-                 <li key={payment.id} className="px-6 py-4 flex flex-col sm:flex-row justify-between sm:items-center hover:bg-slate-50 transition-colors">
-                   <div className="mb-2 sm:mb-0">
-                     <p className="font-bold text-lg text-slate-700 flex items-center gap-2">
-                        {proj?.name || 'Неизвестен проект'}
-                        <span className="text-xs font-normal text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">{payment.date}</span>
-                     </p>
-                     <p className="text-sm text-slate-400">{payment.description}</p>
-                   </div>
-                   <div className="text-left sm:text-right">
-                     <p className="text-emerald-600 font-bold text-xl">+{payment.totalAmount.toLocaleString('bg-BG', {style:'currency', currency:'BGN'})}</p>
-                     <div className="flex gap-2 mt-1 sm:justify-end">
-                        {payment.distributions.map(d => {
-                             const pName = PARTNERS.find(p => p.id === d.partnerId)?.name.split(' ')[0];
-                             return (
-                               <span key={d.partnerId} className="text-xs bg-emerald-50 text-emerald-700 px-2 py-1 rounded border border-emerald-100">
-                                 {pName}: {d.amount.toFixed(0)}
-                               </span>
-                             )
-                        })}
-                     </div>
-                   </div>
-                 </li>
-               )
-             })}
-           </ul>
         </div>
       </div>
     );
@@ -611,162 +738,151 @@ export default function App() {
   const ExpensesView = () => {
     const [desc, setDesc] = useState('');
     const [amount, setAmount] = useState('');
-    const [cat, setCat] = useState(EXPENSE_CATEGORIES[0]);
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-    
-    // Distribution State
-    const [distType, setDistType] = useState<'ps_split' | 'common' | 'individual' | 'manual'>('ps_split');
+    const [category, setCategory] = useState(EXPENSE_CATEGORIES[0]);
+    const [distType, setDistType] = useState<'general' | 'plamen_svetlo' | 'individual'>('plamen_svetlo');
     const [selectedPartner, setSelectedPartner] = useState(PARTNERS[0].id);
-    const [splits, setSplits] = useState<{[key: string]: string}>({});
 
-    const handleAdd = () => {
-      if(!amount || !desc) {
-        alert("Моля въведете сума и описание.");
-        return;
-      }
-      
-      const numAmount = parseFloat(amount);
+    const handleSave = () => {
+      const val = parseFloat(amount);
+      if (!val || !desc) return;
+
       let distributions: {partnerId: string, amount: number}[] = [];
 
-      if (distType === 'common') {
-        const share = numAmount / PARTNERS.length;
-        distributions = PARTNERS.map(p => ({ partnerId: p.id, amount: share }));
-      } else if (distType === 'ps_split') {
-        const p1 = PARTNERS.find(p => p.name.includes('Пламен'))?.id || PARTNERS[0].id;
-        const p2 = PARTNERS.find(p => p.name.includes('Светлозар'))?.id || PARTNERS[1].id;
+      if (distType === 'plamen_svetlo') {
+        const half = val / 2;
+        // Assuming p1 is Plamen, p2 is Svetlozar based on constants.ts order
         distributions = [
-          { partnerId: p1, amount: numAmount / 2 },
-          { partnerId: p2, amount: numAmount / 2 }
+          { partnerId: 'p1', amount: half },
+          { partnerId: 'p2', amount: half }
         ];
       } else if (distType === 'individual') {
-        distributions = [{ partnerId: selectedPartner, amount: numAmount }];
-      } else {
-        distributions = Object.entries(splits).map(([pid, amt]) => ({
-          partnerId: pid,
-          amount: parseFloat(amt as string) || 0
-        })).filter(d => d.amount > 0);
+        distributions = [{ partnerId: selectedPartner, amount: val }];
       }
+      // If 'general', distributions remains empty [] -> handled as /3 in calc function
 
-      addExpense(desc, numAmount, date, cat, distributions);
-      setDesc('');
+      addExpense(desc, val, date, category, distributions);
       setAmount('');
-      setSplits({});
+      setDesc('');
+      alert("Разходът е записан!");
     };
 
     return (
-      <div className="space-y-6">
-        <SectionTitle icon={Receipt} color="text-red-600">Въвеждане на Разход</SectionTitle>
-        
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <SectionTitle icon={Receipt} color="text-red-500">Въвеждане на Разход</SectionTitle>
+
         <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-red-500">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
              <div className="col-span-1 md:col-span-2">
-                <label className="block text-sm font-medium text-slate-500 mb-2">Описание на разхода</label>
-                <input 
-                  value={desc} 
-                  onChange={e => setDesc(e.target.value)} 
-                  className="w-full rounded-lg border-red-200 border bg-white p-3 text-base text-slate-700 focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all placeholder:text-slate-300"
-                  placeholder="Наем офис..." 
-                />
+               <label className="block text-sm font-medium text-slate-500 mb-2">Описание на разхода</label>
+               <input 
+                 value={desc} 
+                 onChange={e => setDesc(e.target.value)} 
+                 className="w-full rounded-lg border-red-200 border bg-white p-3 text-base text-slate-700 focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all placeholder:text-slate-300"
+                 placeholder="Напр. Закупуване на лазерен нивелир..." 
+               />
              </div>
+             
              <div>
-                <label className="block text-sm font-medium text-slate-500 mb-2">Сума (лв.)</label>
-                <input 
+               <label className="block text-sm font-medium text-slate-500 mb-2">Сума (лв.)</label>
+               <div className="relative">
+                 <span className="absolute left-3 top-3 text-slate-400 font-bold">BGN</span>
+                 <input 
                   type="number" 
                   value={amount} 
                   onChange={e => setAmount(e.target.value)} 
-                  className="w-full rounded-lg border-red-200 border bg-white p-3 text-lg font-bold text-slate-700 focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all placeholder:text-slate-300"
+                  className="w-full rounded-lg border-red-200 border bg-white p-3 pl-12 text-lg font-bold text-slate-700 focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all"
                   placeholder="0.00" 
-                />
+                 />
+               </div>
              </div>
-             <div>
-                <label className="block text-sm font-medium text-slate-500 mb-2">Дата</label>
-                <input 
-                  type="date" 
-                  value={date} 
-                  onChange={e => setDate(e.target.value)} 
-                  className="w-full rounded-lg border-red-200 border bg-white p-3 text-base text-slate-700 focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all"
-                />
-             </div>
-             
-             <div className="col-span-1 md:col-span-2 bg-slate-50 p-4 rounded-xl border border-slate-200">
-                <label className="block text-sm font-bold text-slate-600 mb-3">Кой поема разхода?</label>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  <button onClick={() => setDistType('ps_split')} className={`p-3 rounded-lg text-sm font-bold border transition-all ${distType === 'ps_split' ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
-                    Пламен + Светльо (50/50)
-                  </button>
-                  <button onClick={() => setDistType('common')} className={`p-3 rounded-lg text-sm font-bold border transition-all ${distType === 'common' ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
-                    Общ (Всички 3-ма)
-                  </button>
-                  <button onClick={() => setDistType('individual')} className={`p-3 rounded-lg text-sm font-bold border transition-all ${distType === 'individual' ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
-                    Индивидуален
-                  </button>
-                  <button onClick={() => setDistType('manual')} className={`p-3 rounded-lg text-sm font-bold border transition-all ${distType === 'manual' ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'}`}>
-                    Ръчно (%)
-                  </button>
-                </div>
-                
-                {distType === 'individual' && (
-                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-top-2">
-                    <label className="text-xs font-bold text-blue-800 uppercase mb-1 block">Избери човек</label>
-                    <select value={selectedPartner} onChange={e => setSelectedPartner(e.target.value)} className="w-full text-base border-slate-300 p-2 rounded shadow-sm">
-                      {PARTNERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-                    </select>
-                  </div>
-                )}
 
-                {distType === 'manual' && (
-                   <div className="grid grid-cols-3 gap-4 mt-2 animate-in fade-in slide-in-from-top-2">
-                     {PARTNERS.map(p => (
-                       <div key={p.id}>
-                         <label className="text-xs font-bold text-slate-500 block mb-1">{p.name.split(' ')[0]}</label>
-                         <input type="number" className="w-full border border-slate-300 rounded p-2 text-sm" placeholder="0" 
-                           value={splits[p.id] || ''} 
-                           onChange={e => setSplits(prev => ({...prev, [p.id]: e.target.value}))}
-                         />
-                       </div>
-                     ))}
-                   </div>
-                )}
+             <div>
+                <label className="block text-sm font-medium text-slate-500 mb-2">Категория</label>
+                <select 
+                  value={category} 
+                  onChange={e => setCategory(e.target.value)}
+                  className="w-full rounded-lg border-red-200 border bg-white p-3 text-base text-slate-700 focus:ring-2 focus:ring-red-100 focus:border-red-400 outline-none transition-all"
+                >
+                  {EXPENSE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                </select>
              </div>
-          </div>
-          <button 
-            onClick={handleAdd}
-            className="w-full mt-6 bg-red-600 text-white px-6 py-3 rounded-lg text-base font-bold hover:bg-red-700 shadow-md transition-all transform hover:-translate-y-0.5"
-          >
-            ДОБАВИ РАЗХОД
-          </button>
+
+             <div className="col-span-1 md:col-span-2 bg-red-50 p-6 rounded-xl border border-red-100">
+               <label className="block text-base font-bold text-red-900 mb-4 flex items-center gap-2">
+                 <Users className="w-5 h-5" /> Кой поема разхода?
+               </label>
+               
+               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                 <button 
+                   onClick={() => setDistType('plamen_svetlo')}
+                   className={`p-4 rounded-xl border-2 text-left transition-all ${distType === 'plamen_svetlo' ? 'border-red-500 bg-white shadow-md' : 'border-transparent hover:bg-red-100/50'}`}
+                 >
+                   <div className="font-bold text-slate-800">Пламен + Светльо</div>
+                   <div className="text-xs text-slate-500 mt-1">Дели се 50/50 между конструкторите</div>
+                 </button>
+
+                 <button 
+                   onClick={() => setDistType('general')}
+                   className={`p-4 rounded-xl border-2 text-left transition-all ${distType === 'general' ? 'border-red-500 bg-white shadow-md' : 'border-transparent hover:bg-red-100/50'}`}
+                 >
+                   <div className="font-bold text-slate-800">Общ (Фирмен)</div>
+                   <div className="text-xs text-slate-500 mt-1">Дели се по равно между всички (3)</div>
+                 </button>
+
+                 <button 
+                   onClick={() => setDistType('individual')}
+                   className={`p-4 rounded-xl border-2 text-left transition-all ${distType === 'individual' ? 'border-red-500 bg-white shadow-md' : 'border-transparent hover:bg-red-100/50'}`}
+                 >
+                   <div className="font-bold text-slate-800">Индивидуален</div>
+                   <div className="text-xs text-slate-500 mt-1">Само за един човек</div>
+                 </button>
+               </div>
+
+               {distType === 'individual' && (
+                 <div className="mt-4 animate-in fade-in slide-in-from-top-2">
+                   <label className="block text-sm font-medium text-slate-600 mb-2">Избери човек:</label>
+                   <select 
+                     value={selectedPartner}
+                     onChange={e => setSelectedPartner(e.target.value)}
+                     className="w-full md:w-1/2 rounded-lg border-red-200 border bg-white p-2 text-slate-700 outline-none"
+                   >
+                     {PARTNERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                   </select>
+                 </div>
+               )}
+             </div>
+           </div>
+
+           <div className="mt-6">
+             <button 
+               onClick={handleSave}
+               className="w-full bg-red-500 text-white py-4 rounded-xl text-lg font-bold shadow-lg hover:bg-red-600 transition-transform active:scale-95 flex items-center justify-center gap-2"
+             >
+               <Save className="w-6 h-6" /> Запиши Разход
+             </button>
+           </div>
         </div>
 
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-hidden">
+        {/* Expenses List */}
+        <div className="bg-white rounded-xl shadow border border-slate-200 overflow-hidden">
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Описание</th>
-                <th className="px-6 py-3 text-right text-xs font-bold text-slate-500 uppercase">Сума</th>
-              </tr>
+               <tr>
+                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Дата</th>
+                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Описание</th>
+                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Сума</th>
+                 <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase">Категория</th>
+               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-slate-100">
+            <tbody className="bg-white divide-y divide-slate-200">
               {state.expenses.slice().reverse().map(e => (
-                <tr key={e.id} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <div className="font-bold text-slate-700 text-base">{e.description}</div>
-                    <div className="flex gap-2 mt-1">
-                      <span className="text-xs text-slate-500 border border-slate-200 rounded px-2 py-0.5 bg-slate-50">{new Date(e.date).toLocaleDateString('bg-BG')}</span>
-                      <span className="text-xs text-slate-500 border border-slate-200 rounded px-2 py-0.5 bg-slate-50">{e.category}</span>
-                    </div>
-                  </td>
-                  <td className="px-6 py-4 text-right">
-                    <div className="text-red-500 font-bold text-lg">-{e.amount.toFixed(2)} лв.</div>
-                    <div className="text-xs text-slate-400 mt-1">
-                       {!e.distributions || e.distributions.length === 0 
-                         ? 'Разделено на всички' 
-                         : e.distributions.length === 2 && e.distributions.every(d => d.amount === e.distributions[0].amount) && e.distributions.some(d => d.partnerId === PARTNERS[0].id) && e.distributions.some(d => d.partnerId === PARTNERS[1].id)
-                            ? 'Пламен + Светльо'
-                            : e.distributions.length === 1
-                               ? PARTNERS.find(p => p.id === e.distributions[0].partnerId)?.name.split(' ')[0]
-                               : 'Ръчно делене'}
-                    </div>
+                <tr key={e.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-600">{e.date}</td>
+                  <td className="px-6 py-4 text-sm font-medium text-slate-800">{e.description}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-red-600">-{e.amount.toFixed(2)} лв.</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    <span className="px-2 py-1 bg-slate-100 rounded-full text-xs">{e.category}</span>
                   </td>
                 </tr>
               ))}
@@ -778,171 +894,129 @@ export default function App() {
   };
 
   const DividendsView = () => {
-    const [partnerId, setPartnerId] = useState(PARTNERS[0].id);
-    const [amount, setAmount] = useState('');
+    const [selectedPid, setSelectedPid] = useState(PARTNERS[0].id);
+    const [grossAmount, setGrossAmount] = useState('');
     const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
 
-    const selectedStats = financials.partnerStats.find(p => p.partnerId === partnerId);
-    const maxBalance = selectedStats ? selectedStats.balance : 0;
+    const handlePay = () => {
+      const val = parseFloat(grossAmount);
+      if (!val) return;
+      addDividend(selectedPid, val, date);
+      setGrossAmount('');
+      alert("Дивидентът е записан успешно!");
+    };
 
     return (
-      <div className="space-y-6">
-        <SectionTitle icon={Users} color="text-purple-600">Управление на Дивиденти</SectionTitle>
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <SectionTitle icon={CheckCircle2} color="text-purple-600">Дивиденти и Печалба</SectionTitle>
 
-        <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-purple-500">
-          <h3 className="text-lg font-bold mb-4 text-slate-700">Регистриране на изплащане</h3>
-          <div className="space-y-4 max-w-2xl">
-            <div>
-              <label className="block text-sm font-medium text-slate-500 mb-2">Получател</label>
-              <select value={partnerId} onChange={e => setPartnerId(e.target.value)} className="w-full rounded-lg border border-purple-200 bg-white p-3 text-base text-slate-700 focus:ring-2 focus:ring-purple-100 focus:border-purple-400 outline-none transition-all">
-                {PARTNERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-              </select>
-              <div className="mt-2 p-3 bg-slate-50 rounded border border-slate-200 flex justify-between items-center">
-                 <span className="text-sm text-slate-600">Наличен за теглене:</span>
-                 <span className="font-bold text-xl text-emerald-600">{maxBalance.toLocaleString('bg-BG', {style:'currency', currency:'BGN'})}</span>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-500 mb-2">Брутна Сума за теглене</label>
-              <input 
-                type="number" 
-                value={amount} 
-                onChange={e => setAmount(e.target.value)} 
-                className="w-full rounded-lg border border-purple-200 bg-white p-3 text-lg font-bold text-slate-700 focus:ring-2 focus:ring-purple-100 focus:border-purple-400 outline-none transition-all placeholder:text-slate-300"
-                placeholder="0.00" 
-              />
-              {amount && parseFloat(amount) > 0 && (
-                <div className="mt-3 grid grid-cols-2 gap-4">
-                   <div className="bg-amber-50 p-3 rounded border border-amber-100 text-center">
-                     <div className="text-xs text-amber-800 font-bold uppercase">Данък (5%)</div>
-                     <div className="text-lg font-bold text-amber-700">{(parseFloat(amount) * 0.05).toFixed(2)} лв.</div>
-                   </div>
-                   <div className="bg-green-50 p-3 rounded border border-green-100 text-center">
-                     <div className="text-xs text-green-800 font-bold uppercase">Чиста сума</div>
-                     <div className="text-lg font-bold text-green-700">{(parseFloat(amount) * 0.95).toFixed(2)} лв.</div>
-                   </div>
-                </div>
-              )}
-            </div>
-            <button 
-              disabled={!amount || parseFloat(amount) <= 0}
-              onClick={() => {
-                 addDividend(partnerId, parseFloat(amount), date);
-                 setAmount('');
-              }}
-              className="w-full bg-purple-600 text-white py-3 rounded-lg text-base font-bold hover:bg-purple-700 shadow-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Запиши Изплащане
-            </button>
-          </div>
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+           {financials.partnerStats.map(p => (
+             <div key={p.partnerId} className="bg-white p-6 rounded-xl shadow-md border border-slate-100 flex flex-col justify-between">
+               <div>
+                 <h3 className="text-lg font-bold text-slate-700 mb-1">{p.name}</h3>
+                 <div className="text-sm text-slate-400 mb-4">Баланс за теглене</div>
+                 <div className="text-3xl font-extrabold text-emerald-600 mb-2">
+                   {p.balance.toLocaleString('bg-BG', { style: 'currency', currency: 'BGN' })}
+                 </div>
+                 <div className="space-y-1 text-xs text-slate-500">
+                   <div className="flex justify-between"><span>Генериран приход:</span> <span>{p.revenue.toFixed(0)} лв.</span></div>
+                   <div className="flex justify-between"><span>Дял разходи:</span> <span>-{p.expenseShare.toFixed(0)} лв.</span></div>
+                   <div className="flex justify-between"><span>Корп. данък:</span> <span>-{p.corporateTaxShare.toFixed(0)} лв.</span></div>
+                   <div className="flex justify-between font-medium text-purple-600"><span>Изтеглени дивиденти:</span> <span>-{p.dividendsTakenGross.toFixed(0)} лв.</span></div>
+                 </div>
+               </div>
+             </div>
+           ))}
         </div>
 
-        <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-          <h3 className="text-lg font-bold mb-4 text-slate-700">История на плащанията</h3>
-          <ul className="divide-y divide-slate-100">
-            {state.dividends.slice().reverse().map(div => {
-              const pName = PARTNERS.find(p => p.id === div.partnerId)?.name;
-              return (
-                <li key={div.id} className="py-3 flex justify-between items-center hover:bg-slate-50 transition-colors px-2 rounded">
-                  <div>
-                    <span className="font-bold text-slate-700 block text-base">{pName?.split(' ')[0]}</span>
-                    <span className="text-slate-400 text-sm block">{new Date(div.date).toLocaleDateString('bg-BG')}</span>
-                  </div>
-                  <div className="text-right">
-                    <div className="font-bold text-emerald-600 text-lg">{div.netReceived.toFixed(0)} лв. <span className="text-xs text-slate-400 font-normal">(нет)</span></div>
-                    <div className="text-xs text-slate-400">Данък: {div.taxAmount.toFixed(0)} лв.</div>
-                  </div>
-                </li>
-              )
-            })}
-            {state.dividends.length === 0 && <li className="text-slate-400 py-4 text-center">Няма история</li>}
-          </ul>
+        <div className="bg-white p-6 rounded-xl shadow-md border-t-4 border-purple-500">
+           <h3 className="text-lg font-bold text-slate-700 mb-6">Изплащане на Дивидент</h3>
+           <div className="flex flex-col md:flex-row gap-4 items-end">
+             <div className="flex-1 w-full">
+               <label className="block text-sm font-medium text-slate-500 mb-2">Получател</label>
+               <select 
+                 value={selectedPid} 
+                 onChange={e => setSelectedPid(e.target.value)}
+                 className="w-full rounded-lg border-purple-200 border bg-white p-3 text-base text-slate-700 outline-none focus:ring-2 focus:ring-purple-200"
+               >
+                 {PARTNERS.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+               </select>
+             </div>
+             <div className="flex-1 w-full">
+               <label className="block text-sm font-medium text-slate-500 mb-2">Сума (Бруто)</label>
+               <input 
+                 type="number" 
+                 value={grossAmount} 
+                 onChange={e => setGrossAmount(e.target.value)}
+                 className="w-full rounded-lg border-purple-200 border bg-white p-3 text-base text-slate-700 outline-none focus:ring-2 focus:ring-purple-200"
+                 placeholder="0.00"
+               />
+             </div>
+             <div className="flex-1 w-full">
+                <label className="block text-sm font-medium text-slate-500 mb-2">Дата</label>
+                <input 
+                  type="date" 
+                  value={date} 
+                  onChange={e => setDate(e.target.value)} 
+                  className="w-full rounded-lg border-purple-200 border bg-white p-3 text-base text-slate-700 outline-none focus:ring-2 focus:ring-purple-200"
+                />
+             </div>
+             <button 
+               onClick={handlePay}
+               className="bg-purple-600 text-white px-8 py-3 rounded-lg font-bold hover:bg-purple-700 shadow transition-all w-full md:w-auto"
+             >
+               Изплати
+             </button>
+           </div>
+           {grossAmount && !isNaN(parseFloat(grossAmount)) && (
+             <div className="mt-4 p-4 bg-purple-50 rounded-lg text-sm text-purple-900 border border-purple-100">
+               <span className="font-bold">Калкулация:</span> При брутна сума {grossAmount} лв, данък дивидент (5%) е <span className="font-bold">{(parseFloat(grossAmount) * 0.05).toFixed(2)} лв</span>. Получателят ще вземе чисти <span className="font-bold">{(parseFloat(grossAmount) * 0.95).toFixed(2)} лв</span>.
+             </div>
+           )}
         </div>
       </div>
     );
   };
 
   const ReportsView = () => {
-    const [aiReport, setAiReport] = useState('');
+    const [report, setReport] = useState('');
     const [loading, setLoading] = useState(false);
     const [prompt, setPrompt] = useState('');
 
-    const handleGenerateReport = async () => {
+    const handleGenerate = async () => {
       setLoading(true);
       const text = await generateReport(state, financials.summary, financials.partnerStats, prompt);
-      setAiReport(text);
+      setReport(text);
       setLoading(false);
     };
 
     return (
-      <div className="space-y-6">
-        <SectionTitle icon={FileText} color="text-indigo-600">Отчети и Анализи</SectionTitle>
-
-        {/* Detailed Table */}
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 overflow-x-auto">
-          <table className="min-w-full text-sm text-left whitespace-nowrap">
-            <thead className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200 uppercase tracking-wider">
-              <tr>
-                <th className="px-4 py-3">Име</th>
-                <th className="px-4 py-3 text-right">Приход</th>
-                <th className="px-4 py-3 text-right">Разходен Дял</th>
-                <th className="px-4 py-3 text-right">Корп. Данък</th>
-                <th className="px-4 py-3 text-right bg-blue-50 text-blue-900 border-x border-blue-100">Нетна Печалба</th>
-                <th className="px-4 py-3 text-right">Изтеглени</th>
-                <th className="px-4 py-3 text-right font-bold bg-green-50 text-green-900 border-l border-green-100">БАЛАНС</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 bg-white">
-              {financials.partnerStats.map(p => (
-                <tr key={p.partnerId} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-4 py-3 font-bold text-slate-700">{p.name.split(' ')[0]}</td>
-                  <td className="px-4 py-3 text-right text-emerald-600 font-medium">{p.revenue.toLocaleString('bg-BG')}</td>
-                  <td className="px-4 py-3 text-right text-red-500 font-medium">{p.expenseShare.toLocaleString('bg-BG')}</td>
-                  <td className="px-4 py-3 text-right text-amber-600 font-medium">{p.corporateTaxShare.toLocaleString('bg-BG')}</td>
-                  <td className="px-4 py-3 text-right font-bold bg-blue-50 text-blue-800 border-x border-blue-100">{p.netProfitShare.toLocaleString('bg-BG')}</td>
-                  <td className="px-4 py-3 text-right text-slate-600">{p.dividendsTakenGross.toLocaleString('bg-BG')}</td>
-                  <td className="px-4 py-3 text-right font-black bg-green-50 text-emerald-800 text-base border-l border-green-100">{p.balance.toLocaleString('bg-BG')}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        {/* AI Report Section */}
-        <div className="bg-white rounded-xl shadow-md border border-slate-200 p-6">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 gap-4">
-             <h3 className="text-lg font-bold flex items-center gap-2 text-slate-700">
-               <span className="p-2 bg-indigo-100 text-indigo-700 rounded-lg"><Zap className="w-5 h-5" /></span>
-               AI Финансов Асистент
-             </h3>
-             {state.payments.length > 0 && !loading && (
-               <button onClick={handleGenerateReport} className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-indigo-700 shadow transition-colors">
-                 {aiReport ? "Обнови анализа" : "Генерирай анализ"}
-               </button>
-             )}
+      <div className="space-y-6 animate-in fade-in duration-300">
+        <SectionTitle icon={FileText} color="text-blue-500">Отчети и Анализи</SectionTitle>
+        
+        <div className="bg-white p-6 rounded-xl shadow-md">
+          <label className="block text-sm font-medium text-slate-500 mb-2">Специфичен въпрос (опция)</label>
+          <div className="flex gap-4 mb-4">
+            <input 
+              value={prompt}
+              onChange={e => setPrompt(e.target.value)}
+              className="flex-1 rounded-lg border border-slate-200 p-3 outline-none focus:border-blue-400"
+              placeholder="Напр: Как се движим спрямо миналия месец?"
+            />
+            <button 
+              onClick={handleGenerate}
+              disabled={loading}
+              className="bg-blue-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading ? <RefreshCw className="animate-spin w-5 h-5" /> : <Zap className="w-5 h-5" />}
+              {loading ? 'Генериране...' : 'AI Анализ'}
+            </button>
           </div>
           
-          <div className="mb-4">
-             <input 
-              className="w-full border border-slate-300 rounded-lg p-3 text-sm text-slate-700 focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
-              placeholder="Задай специфичен въпрос (напр. 'Как да оптимизираме разходите?')..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-            />
-          </div>
-
-          {loading ? (
-             <div className="p-8 text-center bg-slate-50 rounded-lg border border-slate-100">
-                <div className="animate-spin w-8 h-8 border-4 border-indigo-500 border-t-transparent rounded-full mx-auto mb-3"></div>
-                <p className="text-slate-500 font-medium">Генериране на отчет...</p>
-             </div>
-          ) : aiReport ? (
-             <div className="prose prose-slate max-w-none bg-slate-50 p-6 rounded-xl border border-slate-200 shadow-inner">
-               <div dangerouslySetInnerHTML={{ __html: aiReport.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br />') }} />
-             </div>
-          ) : (
-            <div className="text-center p-8 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-slate-400">
-              Натисни бутона за да генерираш автоматичен анализ на фирмените финанси.
+          {report && (
+            <div className="prose prose-slate max-w-none bg-slate-50 p-6 rounded-xl border border-slate-200 mt-6">
+              <pre className="whitespace-pre-wrap font-sans text-base text-slate-700 leading-relaxed">{report}</pre>
             </div>
           )}
         </div>
@@ -951,100 +1025,82 @@ export default function App() {
   };
 
   const SettingsView = () => (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <SectionTitle icon={Settings}>Настройки на данни</SectionTitle>
+    <div className="space-y-6 animate-in fade-in duration-300">
+      <SectionTitle icon={Settings} color="text-slate-600">Настройки</SectionTitle>
       
-      <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200">
-        <h3 className="text-lg font-bold mb-4 text-slate-700">Резервно копие</h3>
-        <p className="text-slate-500 text-sm mb-6">Свалете текущото състояние на базата данни или заредете файл от друго устройство.</p>
+      <div className="bg-white p-6 rounded-xl shadow-md border border-slate-100">
+        <h3 className="text-lg font-bold text-slate-700 mb-4">Управление на данни</h3>
+        <p className="text-slate-500 mb-6">Можете да направите резервно копие на всички данни или да заредите такова от файл.</p>
         
-        <div className="flex flex-col sm:flex-row gap-4">
+        <div className="flex flex-col md:flex-row gap-4">
           <button 
             onClick={handleExport}
-            className="flex-1 flex items-center justify-center gap-2 bg-blue-600 text-white px-4 py-3 rounded-lg text-base font-bold hover:bg-blue-700 shadow-lg transition-all transform hover:-translate-y-0.5"
+            className="flex-1 bg-indigo-50 text-indigo-700 border border-indigo-200 px-6 py-4 rounded-xl font-bold hover:bg-indigo-100 flex items-center justify-center gap-3 transition-colors"
           >
-            <Download className="w-5 h-5" /> Експорт (Свали)
+            <Download className="w-6 h-6" /> Експорт (Backup)
           </button>
-          <label className="flex-1 flex items-center justify-center gap-2 bg-white border-2 border-slate-200 text-slate-700 px-4 py-3 rounded-lg text-base font-bold hover:bg-slate-50 hover:border-slate-300 cursor-pointer shadow-sm transition-all">
-            <Upload className="w-5 h-5" /> Импорт (Качи)
-            <input type="file" accept=".json" onChange={handleImport} className="hidden" />
+          
+          <label className="flex-1 bg-slate-50 text-slate-700 border border-slate-200 px-6 py-4 rounded-xl font-bold hover:bg-slate-100 flex items-center justify-center gap-3 cursor-pointer transition-colors">
+            <Upload className="w-6 h-6" /> Импорт
+            <input type="file" onChange={handleImport} className="hidden" accept=".json" />
           </label>
         </div>
-      </div>
 
-      <div className="bg-red-50 p-8 rounded-xl shadow-md border border-red-100">
-        <h3 className="text-lg font-bold text-red-800 mb-2">Опасна зона</h3>
-        <p className="text-red-600 text-sm mb-4">Това действие ще изтрие всички въведени данни и не може да бъде отменено.</p>
-        <button 
-          onClick={() => { if(window.confirm("Сигурни ли сте? Всички данни ще бъдат изтрити завинаги!")) setState(INITIAL_STATE); }}
-          className="flex items-center text-red-600 bg-white border border-red-200 hover:bg-red-50 hover:border-red-300 px-4 py-2 rounded-lg text-sm font-bold shadow-sm transition-colors"
-        >
-          <Trash2 className="w-4 h-4 mr-2" /> Нулиране на данни
-        </button>
+        <div className="mt-8 pt-8 border-t border-slate-100">
+          <h4 className="text-red-600 font-bold mb-2">Опасна зона</h4>
+          <button 
+            onClick={() => { if(window.confirm('Сигурни ли сте? Това ще изтрие ВСИЧКИ данни!')) setState(INITIAL_STATE); }}
+            className="text-red-500 hover:text-red-700 text-sm font-medium underline"
+          >
+            Нулиране на приложението
+          </button>
+        </div>
       </div>
     </div>
   );
 
-  const NavItem = ({ id, icon: Icon, label }: { id: typeof activeTab, icon: any, label: string }) => (
-    <button
-      onClick={() => setActiveTab(id)}
-      className={`flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-        activeTab === id 
-          ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg transform scale-105' 
-          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-      }`}
-    >
-      <Icon className={`w-5 h-5 ${activeTab === id ? 'text-white' : 'text-slate-500'}`} />
-      <span className="text-sm font-bold">{label}</span>
-    </button>
-  );
-
   return (
-    <div className="h-screen flex flex-col md:flex-row bg-slate-50 font-sans">
-      {/* Sidebar */}
-      <aside className="w-full md:w-64 bg-white border-r border-slate-200 flex flex-col z-20 shadow-xl">
-        <div className="p-6 border-b border-slate-100 flex items-center gap-3">
-           <div className="bg-blue-600 p-2 rounded-lg text-white shadow-lg shadow-blue-200"><Briefcase className="w-6 h-6" /></div>
-           <div>
-             <h1 className="font-black text-slate-800 text-lg tracking-tight">DIMOV</h1>
-             <p className="text-xs font-bold text-slate-400 tracking-widest uppercase">Finance App</p>
-           </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row">
+      {/* Sidebar Navigation */}
+      <nav className="bg-slate-900 text-slate-300 w-full md:w-72 flex-shrink-0 flex flex-col">
+        <div className="p-6 border-b border-slate-800">
+          <h1 className="text-2xl font-bold text-white tracking-tight">Dimov<span className="text-blue-500">Finance</span></h1>
+          <p className="text-xs text-slate-500 mt-1">Семейно счетоводство</p>
         </div>
         
-        <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-2">Меню</div>
-          <NavItem id="dashboard" icon={LayoutDashboard} label="Табло" />
-          <NavItem id="projects" icon={Briefcase} label="Проекти" />
-          <NavItem id="income" icon={Wallet} label="Приходи" />
-          <NavItem id="expenses" icon={Receipt} label="Разходи" />
-          <NavItem id="dividends" icon={Users} label="Дивиденти" />
-          
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-6">Анализ</div>
-          <NavItem id="reports" icon={FileText} label="Отчети" />
-          
-          <div className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 px-4 mt-6">Система</div>
-          <NavItem id="settings" icon={Settings} label="Настройки" />
-        </nav>
-
-        <div className="p-4 border-t border-slate-100 bg-slate-50">
-          <div className="flex items-center gap-3 px-2">
-            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold">Д</div>
-            <div className="text-xs">
-              <div className="font-bold text-slate-700">Димов ООД</div>
-              <div className="text-slate-400">Версия 2.0</div>
-            </div>
-          </div>
+        <div className="flex-1 overflow-y-auto py-6 px-3 space-y-1">
+          {[
+            { id: 'dashboard', label: 'Табло', icon: LayoutDashboard },
+            { id: 'projects', label: 'Проекти', icon: Briefcase },
+            { id: 'income', label: 'Приходи', icon: Wallet },
+            { id: 'expenses', label: 'Разходи', icon: Receipt },
+            { id: 'dividends', label: 'Дивиденти', icon: CheckCircle2 },
+            { id: 'reports', label: 'Отчети', icon: FileText },
+            { id: 'settings', label: 'Настройки', icon: Settings },
+          ].map((item) => (
+            <button
+              key={item.id}
+              onClick={() => setActiveTab(item.id as any)}
+              className={`w-full flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200 font-medium ${
+                activeTab === item.id 
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' 
+                  : 'hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <item.icon className={`w-5 h-5 ${activeTab === item.id ? 'text-white' : 'text-slate-500'}`} />
+              <span>{item.label}</span>
+            </button>
+          ))}
         </div>
-      </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto bg-slate-50">
-        <header className="sticky top-0 z-10 bg-white/80 backdrop-blur-md border-b border-slate-200 px-6 py-4 flex justify-between items-center md:hidden">
-           <div className="font-bold text-slate-800">Димов Финанси</div>
-           {/* Mobile menu could go here */}
-        </header>
+        <div className="p-4 border-t border-slate-800 text-xs text-slate-600 text-center">
+          v2.0 • 2025
+        </div>
+      </nav>
 
-        <div className="p-4 md:p-8 max-w-7xl mx-auto pb-24 md:pb-8">
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto p-4 md:p-8">
+        <div className="max-w-7xl mx-auto">
           {activeTab === 'dashboard' && <DashboardView />}
           {activeTab === 'projects' && <ProjectsView />}
           {activeTab === 'income' && <IncomeView />}
